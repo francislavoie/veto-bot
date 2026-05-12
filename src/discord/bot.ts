@@ -16,6 +16,7 @@ import {
   SlashCommandBuilder,
   TextChannel
 } from "discord.js";
+import type { AnyThreadChannel } from "discord.js";
 import { loadMaps } from "../config";
 import { VetoService } from "../core/veto-service";
 import type { ChoicePrompt, VetoAction, VetoMode } from "../core/types";
@@ -65,13 +66,20 @@ const commands = [
         .setName("mode")
         .setDescription("Veto mode")
         .setRequired(true)
-        .addChoices({ name: "bo3", value: "bo3" }, { name: "bo5", value: "bo5" })
+        .addChoices(
+          { name: "BO3: ABBA bans, AB picks, final map is decider", value: "bo3-banABBA-pickAB" },
+          { name: "BO5: AB bans, random first, loser picks (first to 3)", value: "bo5-banAB-randomfirst-loserspick" },
+          {
+            name: "BO3 Admin-first: host picks G1, ABBA bans, loser picks G2",
+            value: "bo3-adminfirst-banABBA-loserspick"
+          }
+        )
     )
     .addUserOption((opt) => opt.setName("player1").setDescription("First player").setRequired(true))
     .addUserOption((opt) => opt.setName("player2").setDescription("Second player").setRequired(true)),
   new SlashCommandBuilder()
     .setName("vetonext")
-    .setDescription("Record loser for BO5 and prompt them to pick next map.")
+    .setDescription("Record loser and prompt next map selection when required.")
     .addUserOption((opt) => opt.setName("loser").setDescription("Loser of previous map").setRequired(true)),
   new SlashCommandBuilder().setName("vetoundo").setDescription("Undo the last veto action."),
   new SlashCommandBuilder().setName("vetoreset").setDescription("Clear the veto state for this channel."),
@@ -97,6 +105,18 @@ function decodeMap(encoded: string): string {
 
 function shortAction(action: VetoAction): string {
   return action === "ban" ? "ban" : "pick";
+}
+
+function isVetoChannel(
+  channel: Awaited<ReturnType<Client["channels"]["fetch"]>>
+): channel is TextChannel | AnyThreadChannel {
+  return Boolean(
+    channel &&
+      (channel.type === ChannelType.GuildText ||
+        channel.type === ChannelType.PublicThread ||
+        channel.type === ChannelType.PrivateThread ||
+        channel.type === ChannelType.AnnouncementThread)
+  );
 }
 
 function hasModPermission(interaction: ChatInputCommandInteraction, configStore: GuildConfigStore): boolean {
@@ -193,6 +213,7 @@ async function handleSlashCommand(
         mode,
         playerOneId: playerOne.id,
         playerTwoId: playerTwo.id,
+        startedById: interaction.user.id,
         mapPool: maps
       });
       await interaction.editReply(result.publicMessages.join("\n"));
@@ -319,11 +340,10 @@ async function sendPublicMessages(client: Client, channelId: string, messages: s
     return;
   }
   const channel = await client.channels.fetch(channelId);
-  if (!channel || channel.type !== ChannelType.GuildText) {
+  if (!isVetoChannel(channel)) {
     return;
   }
-  const textChannel = channel as TextChannel;
-  await textChannel.send(messages.join("\n"));
+  await channel.send(messages.join("\n"));
 }
 
 function buildMapButtons(prompt: ChoicePrompt): Array<ActionRowBuilder<ButtonBuilder>> {
@@ -346,11 +366,10 @@ function buildMapButtons(prompt: ChoicePrompt): Array<ActionRowBuilder<ButtonBui
 
 async function sendPlayerPrompt(client: Client, prompt: ChoicePrompt): Promise<void> {
   const channel = await client.channels.fetch(prompt.channelId);
-  if (!channel || channel.type !== ChannelType.GuildText) {
-    throw new Error("Could not find a valid text channel for this veto prompt.");
+  if (!isVetoChannel(channel)) {
+    throw new Error("Could not find a valid text channel or thread for this veto prompt.");
   }
-  const textChannel = channel as TextChannel;
-  await textChannel.send({
+  await channel.send({
     content: `👉 <@${prompt.playerId}> it's your turn to **${shortAction(prompt.action)}** a map.\n${prompt.instructions}`,
     components: buildMapButtons(prompt)
   });

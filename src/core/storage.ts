@@ -72,7 +72,7 @@ export class SQLiteSessionStore implements SessionStore, GuildConfigStore {
       )
       .all() as Array<{
       channel_id: string;
-      mode: "bo3" | "bo5";
+      mode: VetoSession["mode"];
       players_json: string;
       state_json: string;
       completed: 0 | 1;

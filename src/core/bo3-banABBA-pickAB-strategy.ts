@@ -51,9 +51,9 @@ function nextPrompt(channelId: string, state: Bo3State): ChoicePrompt | undefine
 }
 
 export class Bo3Strategy implements VetoStrategy {
-  readonly mode = "bo3" as const;
+  readonly mode = "bo3-banABBA-pickAB" as const;
 
-  start(channelId: string, players: [string, string], mapPool: string[]): StartResult {
+  start(channelId: string, players: [string, string], mapPool: string[], _startedById?: string): StartResult {
     validateMapPool(mapPool);
     const state: Bo3State = {
       players,

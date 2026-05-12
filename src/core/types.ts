@@ -1,4 +1,10 @@
-export type VetoMode = "bo3" | "bo5";
+export type VetoMode =
+  | "bo3-banABBA-pickAB"
+  | "bo5-banAB-randomfirst-loserspick"
+  | "bo3-adminfirst-banABBA-loserspick"
+  // Legacy persisted modes kept for backwards compatibility.
+  | "bo3"
+  | "bo5";
 export type VetoAction = "ban" | "pick";
 
 export interface ChoicePrompt {

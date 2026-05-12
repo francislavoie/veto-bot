@@ -7,31 +7,31 @@ Discord bot for running competitive 1v1 map vetoes with persistent state.
 ### Starting a veto
 
 ```
-/veto mode:(bo3|bo5) player1:@user player2:@user
+/veto mode:(bo3-banABBA-pickAB|bo5-banAB-randomfirst-loserspick|bo3-adminfirst-banABBA-loserspick) player1:@user player2:@user
 ```
 
 Starts a map veto in the current channel. Requires the moderator role (if configured).
 
-- Flips a coin to decide who is `A` (goes first).
-- Displays a brief summary of the mode's rules before the coin flip.
-- **BO3 rules:** ABBA ban order (4 bans total), then AB pick order (2 picks). The one remaining map is the ⚔️ deciding match if the series goes to game 3.
-- **BO5 rules:** AB ban order (2 bans total), then a 🎲 randomly selected starting map. The loser of each game picks the next map. First to 3 wins takes the series — a 2-2 tie goes to an ⚔️ deciding match.
+- Displays a brief summary of the selected mode's rules.
+- **`bo3-banABBA-pickAB`:** coin flip decides `A`, then ABBA bans, AB picks, final remaining map is ⚔️ deciding match.
+- **`bo5-banAB-randomfirst-loserspick`:** coin flip decides `A`, AB bans, 🎲 random starting map, loser picks next map, first to 3 wins.
+- **`bo3-adminfirst-banABBA-loserspick`:** command starter picks game 1 map first, then coin flip decides `A`, ABBA bans, game 1 loser picks game 2, last map is ⚔️ deciding match.
 
-Each veto is scoped to a single channel. Create a thread per match.
+Each veto is scoped to a single channel or thread. Creating one thread per match is recommended.
 
 ---
 
-### Recording the loser (BO5 only)
+### Recording the loser
 
 ```
 /vetonext loser:@user
 ```
 
-Records who lost the last game and prompts them with map-pick buttons. Requires the moderator role.
+Records who lost the last game and prompts them with map-pick buttons when required. Requires the moderator role.
 
-- Cannot be used before all bans are complete.
-- The bot tracks wins/losses and ends the series early if a player reaches 3 wins (3-0 or 3-1).
-- After a 2-2 tie, use `/vetonext` one final time to record the deciding map winner and print the series summary.
+- For **`bo5-banAB-randomfirst-loserspick`**: tracks wins/losses, ends early on 3-0/3-1, and at 2-2 uses one final `/vetonext` for the deciding map result.
+- For **`bo3-adminfirst-banABBA-loserspick`**: use once after bans to report game 1 loser, which prompts that loser to pick game 2.
+- Cannot be used before bans are complete in these modes.
 
 ---
 
@@ -84,7 +84,7 @@ If no role is configured, all server members can use veto commands.
 
 ## Features
 
-- Turn prompts are posted publicly in the veto channel and @mention the active player.
+- Turn prompts are posted publicly in the veto channel/thread and @mention the active player.
 - Only the expected player (or a moderator during an override) can click map buttons.
 - Public status updates are posted after every choice.
 - Final report shows who picked/banned each map, and in BO5 who won/lost each game.

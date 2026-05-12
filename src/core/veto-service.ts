@@ -1,5 +1,6 @@
-import { Bo3Strategy } from "./bo3-strategy";
-import { Bo5Strategy } from "./bo5-strategy";
+import { Bo3Strategy } from "./bo3-banABBA-pickAB-strategy";
+import { Bo5Strategy } from "./bo5-banAB-randomfirst-loserspick-strategy";
+import { Bo3AdminFirstBanABBALosersPickStrategy } from "./bo3-adminfirst-banABBA-loserspick-strategy";
 import type { VetoMode, VetoResult, VetoSession } from "./types";
 import type { VetoStrategy } from "./strategy";
 import { InMemorySessionStore, type SessionStore } from "./storage";
@@ -9,10 +10,9 @@ interface StartVetoInput {
   mode: VetoMode;
   playerOneId: string;
   playerTwoId: string;
+  startedById?: string;
   mapPool: string[];
 }
-
-const mention = (id: string): string => `<@${id}>`;
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -20,7 +20,11 @@ function clone<T>(value: T): T {
 
 export class VetoService {
   private sessions = new Map<string, VetoSession>();
-  private strategies: Record<VetoMode, VetoStrategy> = {
+  private strategies: Record<string, VetoStrategy> = {
+    "bo3-banABBA-pickAB": new Bo3Strategy(),
+    "bo5-banAB-randomfirst-loserspick": new Bo5Strategy(),
+    "bo3-adminfirst-banABBA-loserspick": new Bo3AdminFirstBanABBALosersPickStrategy(),
+    // Legacy aliases for persisted sessions.
     bo3: new Bo3Strategy(),
     bo5: new Bo5Strategy()
   };
@@ -46,7 +50,10 @@ export class VetoService {
       ? [input.playerOneId, input.playerTwoId]
       : [input.playerTwoId, input.playerOneId];
     const strategy = this.strategies[input.mode];
-    const start = strategy.start(input.channelId, orderedPlayers, input.mapPool);
+    if (!strategy) {
+      throw new Error(`Unsupported veto mode "${input.mode}".`);
+    }
+    const start = strategy.start(input.channelId, orderedPlayers, input.mapPool, input.startedById);
 
     const session: VetoSession = {
       channelId: input.channelId,
@@ -59,10 +66,8 @@ export class VetoService {
     this.sessions.set(input.channelId, session);
     this.store.upsert(session);
 
-    const coinMessage = `Coin flip: ${mention(orderedPlayers[0])} won and goes first.`;
-
     return {
-      publicMessages: [coinMessage, ...start.publicMessages],
+      publicMessages: start.publicMessages,
       nextPrompt: start.nextPrompt,
       completed: start.completed
     };

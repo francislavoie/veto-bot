@@ -75,9 +75,9 @@ function randomIndex(length: number, rng: () => number): number {
 }
 
 export class Bo5Strategy implements VetoStrategy {
-  readonly mode = "bo5" as const;
+  readonly mode = "bo5-banAB-randomfirst-loserspick" as const;
 
-  start(channelId: string, players: [string, string], mapPool: string[]): StartResult {
+  start(channelId: string, players: [string, string], mapPool: string[], _startedById?: string): StartResult {
     validateMapPool(mapPool);
     const state: Bo5State = {
       players,
@@ -156,7 +156,7 @@ export class Bo5Strategy implements VetoStrategy {
         state.remainingMaps = state.remainingMaps.filter((m) => m !== startingMap);
         state.mapOrder.push(startingMap);
         state.phase = "await_loser";
-        publicMessages.push(`🎲 Randomly selected starting map: **${startingMap}**.`);
+        publicMessages.push(`🎲 Randomly selected starting map: **${startingMap}**.\n🎮 Game 1 will be played on **${startingMap}**.`);
         publicMessages.push(`Moderator: report each game loser with \`/vetonext loser:@player\`.`);
       }
     } else {

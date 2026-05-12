@@ -23,7 +23,7 @@ describe("VetoService BO3", () => {
     const service = new VetoService(coinHeads, randomMid, new InMemorySessionStore());
     const started = service.startVeto({
       channelId: "ch1",
-      mode: "bo3",
+      mode: "bo3-banABBA-pickAB",
       playerOneId: "p1",
       playerTwoId: "p2",
       mapPool: MAPS
@@ -50,7 +50,7 @@ describe("VetoService BO3", () => {
     const service = new VetoService(coinHeads, randomMid, new InMemorySessionStore());
     service.startVeto({
       channelId: "ch1",
-      mode: "bo3",
+      mode: "bo3-banABBA-pickAB",
       playerOneId: "p1",
       playerTwoId: "p2",
       mapPool: MAPS
@@ -64,7 +64,7 @@ describe("VetoService BO3", () => {
     const service = new VetoService(coinHeads, randomMid, new InMemorySessionStore());
     service.startVeto({
       channelId: "ch1",
-      mode: "bo3",
+      mode: "bo3-banABBA-pickAB",
       playerOneId: "p1",
       playerTwoId: "p2",
       mapPool: MAPS
@@ -81,7 +81,7 @@ describe("VetoService BO3", () => {
     const service = new VetoService(coinHeads, randomMid, new InMemorySessionStore());
     const started = service.startVeto({
       channelId: "self-ch",
-      mode: "bo3",
+      mode: "bo3-banABBA-pickAB",
       playerOneId: "p1",
       playerTwoId: "p1",
       mapPool: MAPS
@@ -92,12 +92,67 @@ describe("VetoService BO3", () => {
   });
 });
 
+describe("VetoService BO3 admin-first", () => {
+  it("runs admin first pick, ABBA bans, loser picks game 2, then final map", () => {
+    const service = new VetoService(coinHeads, randomMid, new InMemorySessionStore());
+    const started = service.startVeto({
+      channelId: "ch-af",
+      mode: "bo3-adminfirst-banABBA-loserspick",
+      playerOneId: "p1",
+      playerTwoId: "p2",
+      startedById: "mod1",
+      mapPool: MAPS
+    });
+
+    expect(started.nextPrompt?.playerId).toBe("mod1");
+    expect(started.nextPrompt?.action).toBe("pick");
+
+    // Host picks game 1 map.
+    const afterHostPick = service.handleChoice("ch-af", "mod1", "A");
+    expect(afterHostPick.publicMessages.join(" ")).toContain("selected **A** as game 1");
+    expect(afterHostPick.publicMessages.join(" ")).toContain("Coin flip");
+
+    // ABBA bans among players.
+    service.handleChoice("ch-af", "p1", "B");
+    service.handleChoice("ch-af", "p2", "C");
+    service.handleChoice("ch-af", "p2", "D");
+    const afterBans = service.handleChoice("ch-af", "p1", "E");
+    expect(afterBans.publicMessages.join(" ")).toContain("Bans complete");
+    expect(afterBans.publicMessages.join(" ")).toContain("Game 1 will be played on **A**");
+
+    // Report loser of game 1, loser picks game 2, game 3 is auto final.
+    const loserPrompt = service.recordLoser("ch-af", "p2");
+    expect(loserPrompt.nextPrompt?.playerId).toBe("p2");
+    const done = service.handleChoice("ch-af", "p2", "F");
+
+    expect(done.completed).toBe(true);
+    expect(done.publicMessages.join(" ")).toContain("BO3 map order");
+    expect(done.publicMessages.join(" ")).toContain("1. **A**");
+    expect(done.publicMessages.join(" ")).toContain("2. **F**");
+    expect(done.publicMessages.join(" ")).toContain("3. **G**");
+  });
+
+  it("does not allow /vetonext before bans finish", () => {
+    const service = new VetoService(coinHeads, randomMid, new InMemorySessionStore());
+    service.startVeto({
+      channelId: "ch-af-2",
+      mode: "bo3-adminfirst-banABBA-loserspick",
+      playerOneId: "p1",
+      playerTwoId: "p2",
+      startedById: "mod1",
+      mapPool: MAPS
+    });
+
+    expect(() => service.recordLoser("ch-af-2", "p1")).toThrow("Bans are not finished yet");
+  });
+});
+
 describe("VetoService BO5", () => {
   it("runs full 3-2 series: bans, random first map, loser picks, deciding map on tie", () => {
     const service = new VetoService(() => 0.8, randomMid, new InMemorySessionStore());
     service.startVeto({
       channelId: "ch2",
-      mode: "bo5",
+      mode: "bo5-banAB-randomfirst-loserspick",
       playerOneId: "p1",
       playerTwoId: "p2",
       mapPool: MAPS
@@ -143,7 +198,7 @@ describe("VetoService BO5", () => {
     const service = new VetoService(() => 0.8, randomMid, new InMemorySessionStore());
     service.startVeto({
       channelId: "ch2b",
-      mode: "bo5",
+      mode: "bo5-banAB-randomfirst-loserspick",
       playerOneId: "p1",
       playerTwoId: "p2",
       mapPool: MAPS
@@ -169,7 +224,7 @@ describe("VetoService BO5", () => {
     const service = new VetoService(() => 0.8, randomMid, new InMemorySessionStore());
     service.startVeto({
       channelId: "ch2c",
-      mode: "bo5",
+      mode: "bo5-banAB-randomfirst-loserspick",
       playerOneId: "p1",
       playerTwoId: "p2",
       mapPool: MAPS
@@ -197,7 +252,7 @@ describe("VetoService BO5", () => {
     const service = new VetoService(coinHeads, randomMid, new InMemorySessionStore());
     service.startVeto({
       channelId: "ch3",
-      mode: "bo3",
+      mode: "bo3-banABBA-pickAB",
       playerOneId: "p1",
       playerTwoId: "p2",
       mapPool: MAPS
@@ -215,7 +270,7 @@ describe("VetoService persistence", () => {
     const service1 = new VetoService(coinHeads, randomMid, store1);
     service1.startVeto({
       channelId: "persist-channel",
-      mode: "bo3",
+      mode: "bo3-banABBA-pickAB",
       playerOneId: "p1",
       playerTwoId: "p2",
       mapPool: MAPS

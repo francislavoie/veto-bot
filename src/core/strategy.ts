@@ -1,4 +1,5 @@
 import type { ChoicePrompt, VetoResult } from "./types";
+import type { VetoMode } from "./types";
 
 export interface StartResult {
   state: unknown;
@@ -8,8 +9,8 @@ export interface StartResult {
 }
 
 export interface VetoStrategy {
-  readonly mode: "bo3" | "bo5";
-  start(channelId: string, players: [string, string], mapPool: string[]): StartResult;
+  readonly mode: VetoMode;
+  start(channelId: string, players: [string, string], mapPool: string[], startedById?: string): StartResult;
   getPrompt(channelId: string, state: unknown): ChoicePrompt | undefined;
   getStatusSummary(state: unknown): string;
   applyChoice(
