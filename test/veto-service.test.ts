@@ -145,6 +145,29 @@ describe("VetoService BO3 admin-first", () => {
 
     expect(() => service.recordLoser("ch-af-2", "p1")).toThrow("Bans are not finished yet");
   });
+
+  it("reminds the moderator to report the loser again after undoing /vetonext", () => {
+    const service = new VetoService(coinHeads, randomMid, new InMemorySessionStore());
+    service.startVeto({
+      channelId: "ch-af-3",
+      mode: "bo3-adminfirst-banABBA-loserspick",
+      playerOneId: "p1",
+      playerTwoId: "p2",
+      startedById: "mod1",
+      mapPool: MAPS
+    });
+
+    service.handleChoice("ch-af-3", "mod1", "A");
+    service.handleChoice("ch-af-3", "p1", "B");
+    service.handleChoice("ch-af-3", "p2", "C");
+    service.handleChoice("ch-af-3", "p2", "D");
+    service.handleChoice("ch-af-3", "p1", "E");
+    service.recordLoser("ch-af-3", "p2");
+
+    const undone = service.undo("ch-af-3");
+    expect(undone.publicMessages.join(" ")).toContain("Awaiting game 1 loser report");
+    expect(undone.nextPrompt).toBeUndefined();
+  });
 });
 
 describe("VetoService BO5", () => {

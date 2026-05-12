@@ -23,6 +23,11 @@ import type { ChoicePrompt, VetoAction, VetoMode } from "../core/types";
 import { SQLiteSessionStore } from "../core/storage";
 import type { GuildConfigStore } from "../core/storage";
 
+interface PromptTracker {
+  prompt: ChoicePrompt;
+  messageId: string;
+}
+
 function normalizeEnv(value: string | undefined): string | undefined {
   if (!value) {
     return undefined;
@@ -147,6 +152,8 @@ export async function startBot(): Promise<void> {
   const vetoService = new VetoService(Math.random, Math.random, store);
   // Channels where a moderator override is pending for the next button click.
   const overrideChannels = new Set<string>();
+  // Latest visible prompt message per channel so stale buttons can be disabled.
+  const promptMessages = new Map<string, PromptTracker>();
 
   const client = new Client({
     intents: [GatewayIntentBits.Guilds],
@@ -159,11 +166,11 @@ export async function startBot(): Promise<void> {
 
   client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.isChatInputCommand()) {
-      await handleSlashCommand(interaction, vetoService, maps, client, store, overrideChannels);
+      await handleSlashCommand(interaction, vetoService, maps, client, store, overrideChannels, promptMessages);
       return;
     }
     if (interaction.isButton()) {
-      await handleButton(interaction, vetoService, client, store, overrideChannels);
+      await handleButton(interaction, vetoService, client, store, overrideChannels, promptMessages);
     }
   });
 
@@ -176,7 +183,8 @@ async function handleSlashCommand(
   maps: string[],
   client: Client,
   configStore: GuildConfigStore,
-  overrideChannels: Set<string>
+  overrideChannels: Set<string>,
+  promptMessages: Map<string, PromptTracker>
 ): Promise<void> {
   if (!interaction.channelId) {
     await interaction.reply({ content: "This command must be used in a channel.", flags: MessageFlags.Ephemeral });
@@ -218,7 +226,7 @@ async function handleSlashCommand(
       });
       await interaction.editReply(result.publicMessages.join("\n"));
       if (result.nextPrompt) {
-        await sendPlayerPrompt(client, result.nextPrompt);
+        await sendPlayerPrompt(client, result.nextPrompt, promptMessages);
       }
       return;
     }
@@ -228,7 +236,7 @@ async function handleSlashCommand(
       const result = vetoService.recordLoser(interaction.channelId, loser.id);
       await interaction.editReply(result.publicMessages.join("\n"));
       if (result.nextPrompt) {
-        await sendPlayerPrompt(client, result.nextPrompt);
+        await sendPlayerPrompt(client, result.nextPrompt, promptMessages);
       }
       return;
     }
@@ -237,7 +245,7 @@ async function handleSlashCommand(
       const result = vetoService.undo(interaction.channelId);
       await interaction.editReply(result.publicMessages.join("\n"));
       if (result.nextPrompt) {
-        await sendPlayerPrompt(client, result.nextPrompt);
+        await sendPlayerPrompt(client, result.nextPrompt, promptMessages);
       }
       return;
     }
@@ -245,6 +253,8 @@ async function handleSlashCommand(
     if (interaction.commandName === "vetoreset") {
       vetoService.resetVeto(interaction.channelId);
       overrideChannels.delete(interaction.channelId);
+      await disableTrackedPrompt(client, promptMessages.get(interaction.channelId));
+      promptMessages.delete(interaction.channelId);
       await interaction.editReply("🗑️ Veto state for this channel has been reset.");
     }
 
@@ -272,7 +282,8 @@ async function handleButton(
   vetoService: VetoService,
   client: Client,
   configStore: GuildConfigStore,
-  overrideChannels: Set<string>
+  overrideChannels: Set<string>,
+  promptMessages: Map<string, PromptTracker>
 ): Promise<void> {
   if (!interaction.isButton()) {
     return;
@@ -317,13 +328,15 @@ async function handleButton(
   try {
     const result = vetoService.handleChoice(channelId, chooserId, map);
     await interaction.deleteReply();
+    await disableTrackedPrompt(client, promptMessages.get(channelId));
+    promptMessages.delete(channelId);
     const overrideNote =
       chooserId !== interaction.user.id
         ? [`🔓 *(Override by <@${interaction.user.id}> on behalf of <@${chooserId}>)*`]
         : [];
     await sendPublicMessages(client, channelId, [...overrideNote, ...result.publicMessages]);
     if (result.nextPrompt) {
-      await sendPlayerPrompt(client, result.nextPrompt);
+      await sendPlayerPrompt(client, result.nextPrompt, promptMessages);
     }
   } catch (error) {
     const raw = error instanceof Error ? error.message : "Unexpected error.";
@@ -346,7 +359,7 @@ async function sendPublicMessages(client: Client, channelId: string, messages: s
   await channel.send(messages.join("\n"));
 }
 
-function buildMapButtons(prompt: ChoicePrompt): Array<ActionRowBuilder<ButtonBuilder>> {
+function buildMapButtons(prompt: ChoicePrompt, disabled = false): Array<ActionRowBuilder<ButtonBuilder>> {
   const rows: Array<ActionRowBuilder<ButtonBuilder>> = [];
 
   for (let i = 0; i < prompt.options.length; i += 5) {
@@ -356,6 +369,7 @@ function buildMapButtons(prompt: ChoicePrompt): Array<ActionRowBuilder<ButtonBui
         new ButtonBuilder()
           .setCustomId(`veto:${prompt.channelId}:${encodeMap(map)}`)
           .setLabel(map)
+          .setDisabled(disabled)
           .setStyle(ButtonStyle.Primary)
       );
     }
@@ -364,13 +378,36 @@ function buildMapButtons(prompt: ChoicePrompt): Array<ActionRowBuilder<ButtonBui
   return rows;
 }
 
-async function sendPlayerPrompt(client: Client, prompt: ChoicePrompt): Promise<void> {
+async function disableTrackedPrompt(client: Client, tracker?: PromptTracker): Promise<void> {
+  if (!tracker) {
+    return;
+  }
+  const channel = await client.channels.fetch(tracker.prompt.channelId);
+  if (!isVetoChannel(channel)) {
+    return;
+  }
+  try {
+    const message = await channel.messages.fetch(tracker.messageId);
+    await message.delete();
+  } catch (error) {
+    console.warn(`Could not delete old veto prompt in ${tracker.prompt.channelId}:`, error);
+  }
+}
+
+async function sendPlayerPrompt(
+  client: Client,
+  prompt: ChoicePrompt,
+  promptMessages: Map<string, PromptTracker>
+): Promise<void> {
+  const existing = promptMessages.get(prompt.channelId);
+  await disableTrackedPrompt(client, existing);
   const channel = await client.channels.fetch(prompt.channelId);
   if (!isVetoChannel(channel)) {
     throw new Error("Could not find a valid text channel or thread for this veto prompt.");
   }
-  await channel.send({
+  const message = await channel.send({
     content: `👉 <@${prompt.playerId}> it's your turn to **${shortAction(prompt.action)}** a map.\n${prompt.instructions}`,
     components: buildMapButtons(prompt)
   });
+  promptMessages.set(prompt.channelId, { prompt, messageId: message.id });
 }

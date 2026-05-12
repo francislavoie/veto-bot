@@ -108,6 +108,9 @@ export class Bo3AdminFirstBanABBALosersPickStrategy implements VetoStrategy {
     if (state.firstGameLoserId) {
       lines.push(`💀 Game 1 loser: ${mention(state.firstGameLoserId)}`);
     }
+    if (state.phase === "await_loser") {
+      lines.push(`📝 Awaiting game 1 loser report. Moderator: use \`/vetonext loser:@player\`.`);
+    }
     if (state.mapOrder.length === 3) {
       lines.push(
         `✅ BO3 map order:\n` +
