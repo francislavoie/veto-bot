@@ -542,6 +542,10 @@ async function deleteMessageById(client: Client, channelId: string, messageId: s
     const message = await channel.messages.fetch(messageId);
     await message.delete();
   } catch (error) {
+    // Message already gone (deleted manually/race with another cleanup) — ignore.
+    if (typeof error === "object" && error && "code" in error && (error as { code?: unknown }).code === 10008) {
+      return;
+    }
     console.warn(`Could not delete message ${messageId} in ${channelId}:`, error);
   }
 }
