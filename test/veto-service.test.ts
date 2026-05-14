@@ -109,7 +109,7 @@ describe("VetoService BO3 admin-first", () => {
 
     // Host picks game 1 map.
     const afterHostPick = service.handleChoice("ch-af", "mod1", "A");
-    expect(afterHostPick.publicMessages.join(" ")).toContain("selected **A** as game 1");
+    expect(afterHostPick.publicMessages.join(" ")).toContain("selected **A** as Map 1");
     expect(afterHostPick.publicMessages.join(" ")).toContain("Coin flip");
 
     // ABBA bans among players.
@@ -118,7 +118,8 @@ describe("VetoService BO3 admin-first", () => {
     service.handleChoice("ch-af", "p2", "D");
     const afterBans = service.handleChoice("ch-af", "p1", "E");
     expect(afterBans.publicMessages.join(" ")).toContain("Bans complete");
-    expect(afterBans.publicMessages.join(" ")).toContain("Game 1 will be played on **A**");
+    expect(afterBans.publicMessages.join(" ")).toContain("Map 1 was picked by the admin: **A**");
+    expect(afterBans.publicMessages.join(" ")).toContain("Second map will be loser's pick, from the remaining maps: **F**, **G**");
 
     // Report loser of game 1, loser picks game 2, game 3 is auto final.
     const loserPrompt = service.recordLoser("ch-af", "p2");
@@ -165,7 +166,7 @@ describe("VetoService BO3 admin-first", () => {
     service.recordLoser("ch-af-3", "p2");
 
     const undone = service.undo("ch-af-3");
-    expect(undone.publicMessages.join(" ")).toContain("Awaiting game 1 loser report");
+    expect(undone.publicMessages.join(" ")).toContain("Awaiting Map 1 loser report");
     expect(undone.nextPrompt).toBeUndefined();
   });
 });
@@ -281,6 +282,119 @@ describe("VetoService BO5", () => {
       mapPool: MAPS
     });
     expect(() => service.recordLoser("ch3", "p1")).toThrow("/vetonext");
+  });
+});
+
+describe("VetoService BO5 winner A", () => {
+  it("runs BA bans, A picks first two maps, then loser picks remaining maps", () => {
+    const service = new VetoService(() => 0.9, randomMid, new InMemorySessionStore());
+    const started = service.startVeto({
+      channelId: "chw1",
+      mode: "bo5-winnerA-banBA-pickAA-loserspick",
+      playerOneId: "p1",
+      playerTwoId: "p2",
+      advantagedPlayerId: "p1",
+      mapPool: MAPS
+    });
+
+    expect(started.publicMessages.join(" ")).toContain("Advantage set: <@p1> is A");
+    expect(started.nextPrompt?.playerId).toBe("p2");
+    expect(started.nextPrompt?.action).toBe("ban");
+
+    // BA bans
+    service.handleChoice("chw1", "p2", "A");
+    const afterSecondBan = service.handleChoice("chw1", "p1", "B");
+    expect(afterSecondBan.nextPrompt?.playerId).toBe("p1");
+    expect(afterSecondBan.nextPrompt?.action).toBe("pick");
+
+    // A picks first two maps
+    const firstPick = service.handleChoice("chw1", "p1", "C");
+    expect(firstPick.nextPrompt?.playerId).toBe("p1");
+    const secondPick = service.handleChoice("chw1", "p1", "D");
+    expect(secondPick.nextPrompt).toBeUndefined();
+
+    // Game 1 loser -> map 2 already set
+    const g1 = service.recordLoser("chw1", "p2"); // p1 up 1-0
+    expect(g1.publicMessages.join(" ")).toContain("Map 2 is already set: **D**");
+    expect(g1.nextPrompt).toBeUndefined();
+
+    // Game 2 loser -> loser picks map 3
+    const g2 = service.recordLoser("chw1", "p1"); // 1-1
+    expect(g2.nextPrompt?.playerId).toBe("p1");
+    const g3Pick = service.handleChoice("chw1", "p1", "E");
+    expect(g3Pick.publicMessages.join(" ")).toContain("Remaining maps: **F**, **G**");
+
+    // Game 3 loser -> loser picks map 4
+    const g3 = service.recordLoser("chw1", "p1"); // p2 leads 2-1
+    expect(g3.nextPrompt?.playerId).toBe("p1");
+    service.handleChoice("chw1", "p1", "F");
+
+    // Game 4 loser -> loser picks map 5
+    const g4 = service.recordLoser("chw1", "p2"); // 2-2
+    expect(g4.nextPrompt?.playerId).toBe("p2");
+    service.handleChoice("chw1", "p2", "G");
+
+    // Game 5 result
+    const done = service.recordLoser("chw1", "p2"); // p1 wins 3-2
+    expect(done.completed).toBe(true);
+    expect(done.publicMessages.join(" ")).toContain("3-2");
+    expect(done.publicMessages.join(" ")).toContain("won vs");
+    expect(done.publicMessages.join(" ")).toContain("Game 5:");
+  });
+
+  it("stops early on 3-0", () => {
+    const service = new VetoService(() => 0.9, randomMid, new InMemorySessionStore());
+    service.startVeto({
+      channelId: "chw2",
+      mode: "bo5-winnerA-banBA-pickAA-loserspick",
+      playerOneId: "p1",
+      playerTwoId: "p2",
+      advantagedPlayerId: "p1",
+      mapPool: MAPS
+    });
+
+    service.handleChoice("chw2", "p2", "A");
+    service.handleChoice("chw2", "p1", "B");
+    service.handleChoice("chw2", "p1", "C");
+    service.handleChoice("chw2", "p1", "D");
+
+    // p2 loses games 1,2,3 => p1 wins 3-0
+    service.recordLoser("chw2", "p2");
+    const g2 = service.recordLoser("chw2", "p2");
+    service.handleChoice("chw2", "p2", g2.nextPrompt!.options[0]);
+    const done = service.recordLoser("chw2", "p2");
+
+    expect(done.completed).toBe(true);
+    expect(done.publicMessages.join(" ")).toContain("3-0");
+    expect(done.publicMessages.join(" ")).not.toContain("Game 4:");
+  });
+
+  it("allows explicitly setting player2 as advantaged A", () => {
+    const service = new VetoService(() => 0.1, randomMid, new InMemorySessionStore());
+    const started = service.startVeto({
+      channelId: "chw3",
+      mode: "bo5-winnerA-banBA-pickAA-loserspick",
+      playerOneId: "p1",
+      playerTwoId: "p2",
+      advantagedPlayerId: "p2",
+      mapPool: MAPS
+    });
+
+    expect(started.publicMessages.join(" ")).toContain("Advantage set: <@p2> is A");
+    expect(started.nextPrompt?.playerId).toBe("p1");
+  });
+
+  it("requires advantaged A to be provided in winner-A mode", () => {
+    const service = new VetoService(() => 0.1, randomMid, new InMemorySessionStore());
+    expect(() =>
+      service.startVeto({
+        channelId: "chw4",
+        mode: "bo5-winnerA-banBA-pickAA-loserspick",
+        playerOneId: "p1",
+        playerTwoId: "p2",
+        mapPool: MAPS
+      })
+    ).toThrow("Choose which player is advantaged as A");
   });
 });
 

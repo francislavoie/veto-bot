@@ -34,7 +34,7 @@ function promptForState(channelId: string, state: Bo3AdminFirstState): ChoicePro
       playerId: state.startedById,
       action: "pick",
       options: [...state.remainingMaps],
-      instructions: "✅ As host, pick the starting map for game 1 before player coin-flip bans begin."
+      instructions: "✅ As host, pick the starting map for Map 1 before player coin-flip bans begin."
     };
   }
 
@@ -55,7 +55,7 @@ function promptForState(channelId: string, state: Bo3AdminFirstState): ChoicePro
       playerId: state.expectedPicker,
       action: "pick",
       options: [...state.remainingMaps],
-      instructions: "✅ You lost game 1 — pick the map for game 2."
+      instructions: "✅ You lost Map 1 — pick Map 2."
     };
   }
 
@@ -84,7 +84,7 @@ export class Bo3AdminFirstBanABBALosersPickStrategy implements VetoStrategy {
       state,
       publicMessages: [
         `🗺️ **BO3 veto started** between ${mention(players[0])} and ${mention(players[1])}.`,
-        `📋 **Rules:** Host picks game 1 first. Then players ban 4 maps in ABBA order. Two maps remain; game 1 stays fixed, game 1 loser picks game 2, and the last map is the ⚔️ deciding match.`
+        `📋 **Rules:** Host picks Map 1 first. Then players ban 4 maps in ABBA order. Two maps remain; Map 1 stays fixed, Map 1 loser picks Map 2, and the last map is the ⚔️ deciding match.`
       ],
       nextPrompt: promptForState(channelId, state),
       completed: false
@@ -100,21 +100,21 @@ export class Bo3AdminFirstBanABBALosersPickStrategy implements VetoStrategy {
     const lines: string[] = [];
 
     if (state.firstMap) {
-      lines.push(`🎯 Game 1 map: **${state.firstMap}**`);
+      lines.push(`🎯 Map 1: **${state.firstMap}**`);
     }
     if (state.bans.length > 0) {
       lines.push(`🚫 Bans: ${state.bans.map((b) => `**${b.map}** by ${mention(b.playerId)}`).join(", ")}`);
     }
     if (state.firstGameLoserId) {
-      lines.push(`💀 Game 1 loser: ${mention(state.firstGameLoserId)}`);
+      lines.push(`💀 Map 1 loser: ${mention(state.firstGameLoserId)}`);
     }
     if (state.phase === "await_loser") {
-      lines.push(`📝 Awaiting game 1 loser report. Moderator: use \`/vetonext loser:@player\`.`);
+      lines.push(`📝 Awaiting Map 1 loser report. Moderator: use \`/vetonext loser:@player\`.`);
     }
     if (state.mapOrder.length === 3) {
       lines.push(
         `✅ BO3 map order:\n` +
-          `1. **${state.mapOrder[0]}** — host-selected game 1\n` +
+          `1. **${state.mapOrder[0]}** — host-selected Map 1\n` +
           `2. **${state.mapOrder[1]}** — picked by ${mention(state.secondMapPickerId!)}\n` +
           `3. **${state.mapOrder[2]}** — ⚔️ deciding match`
       );
@@ -150,8 +150,10 @@ export class Bo3AdminFirstBanABBALosersPickStrategy implements VetoStrategy {
       state.mapOrder.push(map);
       state.remainingMaps = state.remainingMaps.filter((m) => m !== map);
       state.phase = "bans";
-      publicMessages.push(`✅ ${mention(userId)} selected **${map}** as game 1.`);
-      publicMessages.push(`🪙 Coin flip: ${mention(state.players[0])} bans first, then ${mention(state.players[1])}. Ban order is ABBA.`);
+      publicMessages.push(`✅ ${mention(userId)} selected **${map}** as Map 1.`);
+      publicMessages.push(
+        `🪙 Coin flip: ${mention(state.players[0])} is A and bans first. ${mention(state.players[1])} is B. Ban order is ABBA.`
+      );
     } else if (state.phase === "bans") {
       state.bans.push({ playerId: userId, map });
       state.remainingMaps = state.remainingMaps.filter((m) => m !== map);
@@ -159,16 +161,20 @@ export class Bo3AdminFirstBanABBALosersPickStrategy implements VetoStrategy {
       if (state.bans.length === 4) {
         state.phase = "await_loser";
         publicMessages.push(
-          `🗺️ Bans complete. Remaining maps: **${state.remainingMaps[0]}** and **${state.remainingMaps[1]}**.\n\n` +
-            `🎮 Game 1 will be played on **${state.mapOrder[0]}**.\n` +
-            `Moderator: report game 1 loser with \`/vetonext loser:@player\`.`
+          `🗺️ Bans complete.\n\n` +
+            `🎯 Map 1 was picked by the admin: **${state.mapOrder[0]}**.\n` +
+            `💀 Second map will be loser's pick, from the remaining maps: **${state.remainingMaps[0]}**, **${state.remainingMaps[1]}**.\n` +
+            `Moderator: report Map 1 loser with \`/vetonext loser:@player\`.`
         );
       }
     } else {
       state.secondMapPickerId = userId;
       state.mapOrder.push(map);
       state.remainingMaps = state.remainingMaps.filter((m) => m !== map);
-      publicMessages.push(`✅ ${mention(userId)} picked **${map}** as game 2.`);
+      publicMessages.push(`✅ ${mention(userId)} picked **${map}** as Map 2.`);
+      if (state.remainingMaps.length > 0) {
+        publicMessages.push(`🗺️ Remaining map: **${state.remainingMaps[0]}**.`);
+      }
 
       if (state.remainingMaps.length !== 1) {
         throw new Error("Expected exactly one deciding map remaining.");
@@ -181,10 +187,10 @@ export class Bo3AdminFirstBanABBALosersPickStrategy implements VetoStrategy {
       state.expectedPicker = undefined;
       completed = true;
 
-      publicMessages.push(`⚔️ Deciding map (game 3): **${decidingMap}**.`);
+      publicMessages.push(`⚔️ Deciding map (Map 3): **${decidingMap}**.`);
       publicMessages.push(
         `✅ **BO3 map order:**\n` +
-          `1. **${state.mapOrder[0]}** — host-selected game 1\n` +
+          `1. **${state.mapOrder[0]}** — host-selected Map 1\n` +
           `2. **${state.mapOrder[1]}** — picked by ${mention(state.secondMapPickerId)}\n` +
           `3. **${state.mapOrder[2]}** — ⚔️ deciding match`
       );
@@ -214,7 +220,7 @@ export class Bo3AdminFirstBanABBALosersPickStrategy implements VetoStrategy {
       throw new Error("Bans are not finished yet. Complete admin first pick and ABBA bans first.");
     }
     if (state.phase === "await_pick") {
-      throw new Error("Still waiting for the currently reported loser to pick game 2.");
+      throw new Error("Still waiting for the currently reported loser to pick Map 2.");
     }
     if (state.phase === "done") {
       throw new Error("This BO3 veto is already complete.");
@@ -227,7 +233,7 @@ export class Bo3AdminFirstBanABBALosersPickStrategy implements VetoStrategy {
     return {
       nextState: state,
       result: {
-        publicMessages: [`💀 ${mention(loserId)} lost game 1 on **${state.mapOrder[0]}**.`],
+        publicMessages: [`💀 ${mention(loserId)} lost Map 1 on **${state.mapOrder[0]}**.`],
         nextPrompt: promptForState(channelId, state),
         completed: false
       }

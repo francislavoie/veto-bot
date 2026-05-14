@@ -28,6 +28,15 @@ interface PromptTracker {
   messageId: string;
 }
 
+interface PendingAdvantagePrompt {
+  channelId: string;
+  playerOneId: string;
+  playerTwoId: string;
+  startedById: string;
+  mode: "bo5-winnerA-banBA-pickAA-loserspick";
+  messageId: string;
+}
+
 function normalizeEnv(value: string | undefined): string | undefined {
   if (!value) {
     return undefined;
@@ -72,12 +81,22 @@ const commands = [
         .setDescription("Veto mode")
         .setRequired(true)
         .addChoices(
-          { name: "BO3: ABBA bans, AB picks, final map is decider", value: "bo3-banABBA-pickAB" },
-          { name: "BO5: AB bans, random first, loser picks (first to 3)", value: "bo5-banAB-randomfirst-loserspick" },
+          { 
+            name: "BO3: ABBA bans, AB picks, final map is decider", 
+            value: "bo3-banABBA-pickAB",
+          },
           {
-            name: "BO3 Admin-first: host picks G1, ABBA bans, loser picks G2",
-            value: "bo3-adminfirst-banABBA-loserspick"
-          }
+            name: "BO3 Admin-first: host picks map 1, ABBA bans, loser picks map 2",
+            value: "bo3-adminfirst-banABBA-loserspick",
+          },
+          { 
+            name: "BO5: AB bans, random first, loser picks (first to 3)", 
+            value: "bo5-banAB-randomfirst-loserspick",
+          },
+          {
+            name: "BO5 Winner A: BA bans, A picks Maps 1-2, then loser picks",
+            value: "bo5-winnerA-banBA-pickAA-loserspick",
+          },
         )
     )
     .addUserOption((opt) => opt.setName("player1").setDescription("First player").setRequired(true))
@@ -110,6 +129,10 @@ function decodeMap(encoded: string): string {
 
 function shortAction(action: VetoAction): string {
   return action === "ban" ? "ban" : "pick";
+}
+
+function mention(id: string): string {
+  return `<@${id}>`;
 }
 
 function isVetoChannel(
@@ -154,6 +177,8 @@ export async function startBot(): Promise<void> {
   const overrideChannels = new Set<string>();
   // Latest visible prompt message per channel so stale buttons can be disabled.
   const promptMessages = new Map<string, PromptTracker>();
+  // Channels waiting for moderator choice of advantaged Player A in winner-A mode.
+  const pendingAdvantagePrompts = new Map<string, PendingAdvantagePrompt>();
 
   const client = new Client({
     intents: [GatewayIntentBits.Guilds],
@@ -166,11 +191,29 @@ export async function startBot(): Promise<void> {
 
   client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.isChatInputCommand()) {
-      await handleSlashCommand(interaction, vetoService, maps, client, store, overrideChannels, promptMessages);
+      await handleSlashCommand(
+        interaction,
+        vetoService,
+        maps,
+        client,
+        store,
+        overrideChannels,
+        promptMessages,
+        pendingAdvantagePrompts
+      );
       return;
     }
     if (interaction.isButton()) {
-      await handleButton(interaction, vetoService, client, store, overrideChannels, promptMessages);
+      await handleButton(
+        interaction,
+        vetoService,
+        maps,
+        client,
+        store,
+        overrideChannels,
+        promptMessages,
+        pendingAdvantagePrompts
+      );
     }
   });
 
@@ -184,7 +227,8 @@ async function handleSlashCommand(
   client: Client,
   configStore: GuildConfigStore,
   overrideChannels: Set<string>,
-  promptMessages: Map<string, PromptTracker>
+  promptMessages: Map<string, PromptTracker>,
+  pendingAdvantagePrompts: Map<string, PendingAdvantagePrompt>
 ): Promise<void> {
   if (!interaction.channelId) {
     await interaction.reply({ content: "This command must be used in a channel.", flags: MessageFlags.Ephemeral });
@@ -216,6 +260,45 @@ async function handleSlashCommand(
       const mode = interaction.options.getString("mode", true) as VetoMode;
       const playerOne = interaction.options.getUser("player1", true);
       const playerTwo = interaction.options.getUser("player2", true);
+      const previousPending = pendingAdvantagePrompts.get(interaction.channelId);
+      if (previousPending) {
+        await deleteMessageById(client, previousPending.channelId, previousPending.messageId);
+        pendingAdvantagePrompts.delete(interaction.channelId);
+      }
+
+      if (mode === "bo5-winnerA-banBA-pickAA-loserspick") {
+        const existing = vetoService.getSession(interaction.channelId);
+        if (existing && !existing.completed) {
+          throw new Error("A veto is already active in this channel.");
+        }
+        const response = await interaction.editReply({
+          content:
+            `🏅 Select advantaged Player A for this veto:\n` +
+            `• ${mention(playerOne.id)}\n` +
+            `• ${mention(playerTwo.id)}\n` +
+            `Only the moderator who started this veto can make this choice.`,
+          components: buildAdvantageButtons(
+            interaction.channelId,
+            playerOne.id,
+            playerTwo.id,
+            `@${playerOne.username}`,
+            `@${playerTwo.username}`
+          )
+        });
+        if (!("id" in response)) {
+          throw new Error("Could not create advantaged-player selection prompt.");
+        }
+        pendingAdvantagePrompts.set(interaction.channelId, {
+          channelId: interaction.channelId,
+          playerOneId: playerOne.id,
+          playerTwoId: playerTwo.id,
+          startedById: interaction.user.id,
+          mode,
+          messageId: response.id
+        });
+        return;
+      }
+
       const result = vetoService.startVeto({
         channelId: interaction.channelId,
         mode,
@@ -255,6 +338,11 @@ async function handleSlashCommand(
       overrideChannels.delete(interaction.channelId);
       await disableTrackedPrompt(client, promptMessages.get(interaction.channelId));
       promptMessages.delete(interaction.channelId);
+      const pendingAdvantage = pendingAdvantagePrompts.get(interaction.channelId);
+      if (pendingAdvantage) {
+        await deleteMessageById(client, pendingAdvantage.channelId, pendingAdvantage.messageId);
+        pendingAdvantagePrompts.delete(interaction.channelId);
+      }
       await interaction.editReply("🗑️ Veto state for this channel has been reset.");
     }
 
@@ -280,12 +368,58 @@ async function handleSlashCommand(
 async function handleButton(
   interaction: Interaction,
   vetoService: VetoService,
+  maps: string[],
   client: Client,
   configStore: GuildConfigStore,
   overrideChannels: Set<string>,
-  promptMessages: Map<string, PromptTracker>
+  promptMessages: Map<string, PromptTracker>,
+  pendingAdvantagePrompts: Map<string, PendingAdvantagePrompt>
 ): Promise<void> {
   if (!interaction.isButton()) {
+    return;
+  }
+  if (interaction.customId.startsWith("vetoa:")) {
+    const [, channelId, advantagedPlayerId] = interaction.customId.split(":");
+    const pending = pendingAdvantagePrompts.get(channelId);
+    if (!pending) {
+      await interaction.reply({
+        content: "No pending advantaged-player selection exists for this channel.",
+        flags: MessageFlags.Ephemeral
+      });
+      return;
+    }
+    if (interaction.user.id !== pending.startedById) {
+      await interaction.reply({
+        content: `❌ Only <@${pending.startedById}> can choose advantaged Player A for this veto.`,
+        flags: MessageFlags.Ephemeral
+      });
+      return;
+    }
+    if (advantagedPlayerId !== pending.playerOneId && advantagedPlayerId !== pending.playerTwoId) {
+      await interaction.reply({ content: "Invalid advantaged-player selection.", flags: MessageFlags.Ephemeral });
+      return;
+    }
+    await interaction.deferUpdate();
+    try {
+      const result = vetoService.startVeto({
+        channelId: pending.channelId,
+        mode: pending.mode,
+        playerOneId: pending.playerOneId,
+        playerTwoId: pending.playerTwoId,
+        advantagedPlayerId,
+        startedById: pending.startedById,
+        mapPool: maps
+      });
+      pendingAdvantagePrompts.delete(channelId);
+      await interaction.deleteReply();
+      await sendPublicMessages(client, channelId, result.publicMessages);
+      if (result.nextPrompt) {
+        await sendPlayerPrompt(client, result.nextPrompt, promptMessages);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unexpected error.";
+      await interaction.followUp({ content: message, flags: MessageFlags.Ephemeral });
+    }
     return;
   }
   if (!interaction.customId.startsWith("veto:")) {
@@ -378,20 +512,45 @@ function buildMapButtons(prompt: ChoicePrompt, disabled = false): Array<ActionRo
   return rows;
 }
 
-async function disableTrackedPrompt(client: Client, tracker?: PromptTracker): Promise<void> {
-  if (!tracker) {
-    return;
-  }
-  const channel = await client.channels.fetch(tracker.prompt.channelId);
+function buildAdvantageButtons(
+  channelId: string,
+  playerOneId: string,
+  playerTwoId: string,
+  playerOneLabel: string,
+  playerTwoLabel: string
+): Array<ActionRowBuilder<ButtonBuilder>> {
+  return [
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`vetoa:${channelId}:${playerOneId}`)
+        .setLabel(`${playerOneLabel} as A`)
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId(`vetoa:${channelId}:${playerTwoId}`)
+        .setLabel(`${playerTwoLabel} as A`)
+        .setStyle(ButtonStyle.Secondary)
+    )
+  ];
+}
+
+async function deleteMessageById(client: Client, channelId: string, messageId: string): Promise<void> {
+  const channel = await client.channels.fetch(channelId);
   if (!isVetoChannel(channel)) {
     return;
   }
   try {
-    const message = await channel.messages.fetch(tracker.messageId);
+    const message = await channel.messages.fetch(messageId);
     await message.delete();
   } catch (error) {
-    console.warn(`Could not delete old veto prompt in ${tracker.prompt.channelId}:`, error);
+    console.warn(`Could not delete message ${messageId} in ${channelId}:`, error);
   }
+}
+
+async function disableTrackedPrompt(client: Client, tracker?: PromptTracker): Promise<void> {
+  if (!tracker) {
+    return;
+  }
+  await deleteMessageById(client, tracker.prompt.channelId, tracker.messageId);
 }
 
 async function sendPlayerPrompt(

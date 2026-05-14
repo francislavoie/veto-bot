@@ -68,7 +68,7 @@ export class Bo3Strategy implements VetoStrategy {
       publicMessages: [
         `🗺️ **BO3 veto started** between ${mention(players[0])} and ${mention(players[1])}.`,
         `📋 **Rules:** Both players ban 4 maps in ABBA order, then each picks 1 map (AB order). The last remaining map is the ⚔️ deciding match if the series goes to game 3.`,
-        `🪙 Coin flip: ${mention(players[0])} goes first. Ban order is ABBA.`
+        `🪙 Coin flip: ${mention(players[0])} is A and bans first. ${mention(players[1])} is B. Ban order is ABBA.`
       ],
       nextPrompt: prompt,
       completed: false

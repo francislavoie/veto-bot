@@ -1,5 +1,6 @@
 import { Bo3Strategy } from "./bo3-banABBA-pickAB-strategy";
 import { Bo5Strategy } from "./bo5-banAB-randomfirst-loserspick-strategy";
+import { Bo5WinnerABanBAPickAALosersPickStrategy } from "./bo5-winnerA-banBA-pickAA-loserspick-strategy";
 import { Bo3AdminFirstBanABBALosersPickStrategy } from "./bo3-adminfirst-banABBA-loserspick-strategy";
 import type { VetoMode, VetoResult, VetoSession } from "./types";
 import type { VetoStrategy } from "./strategy";
@@ -10,6 +11,7 @@ interface StartVetoInput {
   mode: VetoMode;
   playerOneId: string;
   playerTwoId: string;
+  advantagedPlayerId?: string;
   startedById?: string;
   mapPool: string[];
 }
@@ -23,6 +25,7 @@ export class VetoService {
   private strategies: Record<string, VetoStrategy> = {
     "bo3-banABBA-pickAB": new Bo3Strategy(),
     "bo5-banAB-randomfirst-loserspick": new Bo5Strategy(),
+    "bo5-winnerA-banBA-pickAA-loserspick": new Bo5WinnerABanBAPickAALosersPickStrategy(),
     "bo3-adminfirst-banABBA-loserspick": new Bo3AdminFirstBanABBALosersPickStrategy(),
     // Legacy aliases for persisted sessions.
     bo3: new Bo3Strategy(),
@@ -45,10 +48,22 @@ export class VetoService {
     if (existing && !existing.completed) {
       throw new Error("A veto is already active in this channel.");
     }
-    const coinWinnerIsPlayerOne = this.rngCoin() < 0.5;
-    const orderedPlayers: [string, string] = coinWinnerIsPlayerOne
-      ? [input.playerOneId, input.playerTwoId]
-      : [input.playerTwoId, input.playerOneId];
+    const orderedPlayers: [string, string] = input.mode === "bo5-winnerA-banBA-pickAA-loserspick"
+      ? (() => {
+          if (!input.advantagedPlayerId) {
+            throw new Error("Choose which player is advantaged as A for this mode.");
+          }
+          if (input.advantagedPlayerId === input.playerOneId) {
+            return [input.playerOneId, input.playerTwoId];
+          }
+          if (input.advantagedPlayerId === input.playerTwoId) {
+            return [input.playerTwoId, input.playerOneId];
+          }
+          throw new Error("Advantaged player must be one of the two veto players.");
+        })()
+      : this.rngCoin() < 0.5
+        ? [input.playerOneId, input.playerTwoId]
+        : [input.playerTwoId, input.playerOneId];
     const strategy = this.strategies[input.mode];
     if (!strategy) {
       throw new Error(`Unsupported veto mode "${input.mode}".`);
