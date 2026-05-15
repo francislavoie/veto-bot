@@ -170,7 +170,11 @@ export class Bo5WinnerABanBAPickAALosersPickStrategy implements VetoStrategy {
           state.phase = "await_loser";
           publicMessages.push(`✅ ${mention(userId)} picked **${map}** as Map 2.`);
           publicMessages.push(
-            `🗺️ Opening maps set:\n1. **${state.mapOrder[0]}**\n2. **${state.mapOrder[1]}**\nModerator: report each map loser with \`/vetonext loser:@player\`.`
+            `🗺️ Remaining maps: ${state.remainingMaps.map((m) => `**${m}**`).join(", ")}\n\n` +
+              `The maps for the first two matches are set:\n` +
+              `1. **${state.mapOrder[0]}**\n` +
+              `2. **${state.mapOrder[1]}**\n` +
+              `Moderator: report each map loser with \`/vetonext loser:@player\`.`
           );
         }
       } else {
@@ -256,4 +260,3 @@ export class Bo5WinnerABanBAPickAALosersPickStrategy implements VetoStrategy {
     };
   }
 }
-
