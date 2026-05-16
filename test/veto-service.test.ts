@@ -398,6 +398,132 @@ describe("VetoService BO5 winner A", () => {
   });
 });
 
+describe("VetoService BO3 ABBA random-first loser's pick", () => {
+  it("runs full flow: ABBA bans → random map 1 → loser picks map 2 → deciding map", () => {
+    // randomMid = 0.6 → with 3 remaining, index = floor(0.6*3) = 1 → second map
+    const service = new VetoService(coinHeads, randomMid, new InMemorySessionStore());
+    const started = service.startVeto({
+      channelId: "chrf1",
+      mode: "bo3-banABBA-randomfirst-loserspick",
+      playerOneId: "p1",
+      playerTwoId: "p2",
+      mapPool: MAPS
+    });
+    // Coin says p1 is A, bans first
+    expect(started.nextPrompt?.playerId).toBe("p1");
+    expect(started.nextPrompt?.action).toBe("ban");
+
+    // ABBA bans: A=p1, B=p2, B=p2, A=p1 → bans A,B,C,D; remaining E,F,G
+    service.handleChoice("chrf1", "p1", "A");
+    service.handleChoice("chrf1", "p2", "B");
+    service.handleChoice("chrf1", "p2", "C");
+    const afterBans = service.handleChoice("chrf1", "p1", "D");
+
+    // After 4 bans, phase is await_loser; randomMid on 3 items picks index 1 = F
+    expect(afterBans.completed).toBe(false);
+    expect(afterBans.nextPrompt).toBeUndefined();
+    expect(afterBans.publicMessages.join(" ")).toContain("Randomly selected Map 1: **F**");
+    expect(afterBans.publicMessages.join(" ")).toContain("Map 2 will be loser's pick");
+
+    // Mod reports loser of Map 1
+    const loserResult = service.recordLoser("chrf1", "p2");
+    expect(loserResult.nextPrompt?.playerId).toBe("p2");
+    expect(loserResult.nextPrompt?.action).toBe("pick");
+    expect(loserResult.nextPrompt?.options).toEqual(expect.arrayContaining(["E", "G"]));
+    expect(loserResult.nextPrompt?.options).not.toContain("F");
+
+    // Loser picks map 2
+    const done = service.handleChoice("chrf1", "p2", "E");
+    expect(done.completed).toBe(true);
+    expect(done.publicMessages.join(" ")).toContain("BO3 map order");
+    expect(done.publicMessages.join(" ")).toContain("1. **F**");
+    expect(done.publicMessages.join(" ")).toContain("2. **E**");
+    expect(done.publicMessages.join(" ")).toContain("3. **G**");
+    expect(done.publicMessages.join(" ")).toContain("deciding match");
+  });
+
+  it("enforces turn order during bans", () => {
+    const service = new VetoService(coinHeads, randomMid, new InMemorySessionStore());
+    service.startVeto({
+      channelId: "chrf2",
+      mode: "bo3-banABBA-randomfirst-loserspick",
+      playerOneId: "p1",
+      playerTwoId: "p2",
+      mapPool: MAPS
+    });
+    // p2 cannot ban first — it's p1's turn (A)
+    expect(() => service.handleChoice("chrf2", "p2", "A")).toThrow("NOT_YOUR_TURN");
+    expect(() => service.handleChoice("chrf2", "p1", "Z")).toThrow("not available");
+  });
+
+  it("rejects /vetonext before bans are done", () => {
+    const service = new VetoService(coinHeads, randomMid, new InMemorySessionStore());
+    service.startVeto({
+      channelId: "chrf3",
+      mode: "bo3-banABBA-randomfirst-loserspick",
+      playerOneId: "p1",
+      playerTwoId: "p2",
+      mapPool: MAPS
+    });
+    expect(() => service.recordLoser("chrf3", "p1")).toThrow("Bans are not finished");
+  });
+
+  it("rejects /vetonext while awaiting loser's pick", () => {
+    const service = new VetoService(coinHeads, randomMid, new InMemorySessionStore());
+    service.startVeto({
+      channelId: "chrf4",
+      mode: "bo3-banABBA-randomfirst-loserspick",
+      playerOneId: "p1",
+      playerTwoId: "p2",
+      mapPool: MAPS
+    });
+    service.handleChoice("chrf4", "p1", "A");
+    service.handleChoice("chrf4", "p2", "B");
+    service.handleChoice("chrf4", "p2", "C");
+    service.handleChoice("chrf4", "p1", "D");
+    service.recordLoser("chrf4", "p2");
+    expect(() => service.recordLoser("chrf4", "p1")).toThrow("Still waiting");
+  });
+
+  it("supports undo from loser's pick back to await_loser", () => {
+    const service = new VetoService(coinHeads, randomMid, new InMemorySessionStore());
+    service.startVeto({
+      channelId: "chrf5",
+      mode: "bo3-banABBA-randomfirst-loserspick",
+      playerOneId: "p1",
+      playerTwoId: "p2",
+      mapPool: MAPS
+    });
+    service.handleChoice("chrf5", "p1", "A");
+    service.handleChoice("chrf5", "p2", "B");
+    service.handleChoice("chrf5", "p2", "C");
+    service.handleChoice("chrf5", "p1", "D");
+    service.recordLoser("chrf5", "p2");
+    service.handleChoice("chrf5", "p2", "E"); // loser picks map 2
+    const undone = service.undo("chrf5");
+    expect(undone.nextPrompt?.playerId).toBe("p2"); // loser's pick prompt restored
+    expect(undone.nextPrompt?.action).toBe("pick");
+  });
+
+  it("supports undo from await_loser back to bans", () => {
+    const service = new VetoService(coinHeads, randomMid, new InMemorySessionStore());
+    service.startVeto({
+      channelId: "chrf6",
+      mode: "bo3-banABBA-randomfirst-loserspick",
+      playerOneId: "p1",
+      playerTwoId: "p2",
+      mapPool: MAPS
+    });
+    service.handleChoice("chrf6", "p1", "A");
+    service.handleChoice("chrf6", "p2", "B");
+    service.handleChoice("chrf6", "p2", "C");
+    service.handleChoice("chrf6", "p1", "D"); // bans done → await_loser
+    const undone = service.undo("chrf6"); // undo 4th ban
+    expect(undone.nextPrompt?.playerId).toBe("p1"); // 4th ban was p1's (A)
+    expect(undone.nextPrompt?.action).toBe("ban");
+  });
+});
+
 describe("VetoService persistence", () => {
   it("restores sessions from sqlite after restart", () => {
     const dbPath = join(tmpdir(), `veto-bot-test-${crypto.randomUUID()}.sqlite`);

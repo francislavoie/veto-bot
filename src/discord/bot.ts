@@ -89,6 +89,10 @@ const commands = [
             name: "BO3 Admin-first: host picks map 1, ABBA bans, loser picks map 2",
             value: "bo3-adminfirst-banABBA-loserspick",
           },
+          {
+            name: "BO3: ABBA bans, random first map, loser picks map 2",
+            value: "bo3-banABBA-randomfirst-loserspick",
+          },
           { 
             name: "BO5: AB bans, random first, loser picks (first to 3)", 
             value: "bo5-banAB-randomfirst-loserspick",

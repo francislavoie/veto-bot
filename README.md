@@ -7,7 +7,7 @@ Discord bot for running competitive 1v1 map vetoes with persistent state.
 ### Starting a veto
 
 ```
-/veto mode:(bo3-banABBA-pickAB|bo5-banAB-randomfirst-loserspick|bo5-winnerA-banBA-pickAA-loserspick|bo3-adminfirst-banABBA-loserspick) player1:@user player2:@user
+/veto mode:(bo3-banABBA-pickAB|bo5-banAB-randomfirst-loserspick|bo5-winnerA-banBA-pickAA-loserspick|bo3-adminfirst-banABBA-loserspick|bo3-banABBA-randomfirst-loserspick) player1:@user player2:@user
 ```
 
 Starts a map veto in the current channel. Requires the moderator role (if configured).
@@ -17,6 +17,7 @@ Starts a map veto in the current channel. Requires the moderator role (if config
 - **`bo5-banAB-randomfirst-loserspick`:** coin flip decides `A`, AB bans, 🎲 random starting map, loser picks next map, first to 3 wins.
 - **`bo5-winnerA-banBA-pickAA-loserspick`:** no coin flip; bot prompts the moderator to click who is advantaged Player A, then bans are BA, A picks Maps 1-2, then loser picks remaining maps, first to 3 wins.
 - **`bo3-adminfirst-banABBA-loserspick`:** command starter picks game 1 map first, then coin flip decides `A`, ABBA bans, game 1 loser picks game 2, last map is ⚔️ deciding match.
+- **`bo3-banABBA-randomfirst-loserspick`:** coin flip decides `A`, ABBA bans, 🎲 random Map 1 from remaining 3, game 1 loser picks Map 2, last map is ⚔️ deciding match.
 
 Each veto is scoped to a single channel or thread. Creating one thread per match is recommended.
 
@@ -33,6 +34,7 @@ Records who lost the last game and prompts them with map-pick buttons when requi
 - For **`bo5-banAB-randomfirst-loserspick`**: tracks wins/losses, ends early on 3-0/3-1, and at 2-2 uses one final `/vetonext` for the deciding map result.
 - For **`bo5-winnerA-banBA-pickAA-loserspick`**: after BA bans and A's first two picks, `/vetonext` records losers and drives loser-picks for the remaining maps; series still ends early on 3-0/3-1.
 - For **`bo3-adminfirst-banABBA-loserspick`**: use once after bans to report game 1 loser, which prompts that loser to pick game 2.
+- For **`bo3-banABBA-randomfirst-loserspick`**: use once after bans to report Map 1 loser, which prompts that loser to pick Map 2.
 - Cannot be used before bans are complete in these modes.
 
 ---

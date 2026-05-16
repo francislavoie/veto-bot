@@ -2,6 +2,7 @@ import { Bo3Strategy } from "./bo3-banABBA-pickAB-strategy";
 import { Bo5Strategy } from "./bo5-banAB-randomfirst-loserspick-strategy";
 import { Bo5WinnerABanBAPickAALosersPickStrategy } from "./bo5-winnerA-banBA-pickAA-loserspick-strategy";
 import { Bo3AdminFirstBanABBALosersPickStrategy } from "./bo3-adminfirst-banABBA-loserspick-strategy";
+import { Bo3BanABBARandomFirstLosersPickStrategy } from "./bo3-banABBA-randomfirst-loserspick-strategy";
 import type { VetoMode, VetoResult, VetoSession } from "./types";
 import type { VetoStrategy } from "./strategy";
 import { InMemorySessionStore, type SessionStore } from "./storage";
@@ -27,6 +28,7 @@ export class VetoService {
     "bo5-banAB-randomfirst-loserspick": new Bo5Strategy(),
     "bo5-winnerA-banBA-pickAA-loserspick": new Bo5WinnerABanBAPickAALosersPickStrategy(),
     "bo3-adminfirst-banABBA-loserspick": new Bo3AdminFirstBanABBALosersPickStrategy(),
+    "bo3-banABBA-randomfirst-loserspick": new Bo3BanABBARandomFirstLosersPickStrategy(),
     // Legacy aliases for persisted sessions.
     bo3: new Bo3Strategy(),
     bo5: new Bo5Strategy()

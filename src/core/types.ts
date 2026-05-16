@@ -3,6 +3,7 @@ export type VetoMode =
   | "bo5-banAB-randomfirst-loserspick"
   | "bo5-winnerA-banBA-pickAA-loserspick"
   | "bo3-adminfirst-banABBA-loserspick"
+  | "bo3-banABBA-randomfirst-loserspick"
   // Legacy persisted modes kept for backwards compatibility.
   | "bo3"
   | "bo5";
